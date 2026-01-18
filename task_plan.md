@@ -80,4 +80,9 @@ argo/growth/
 (将在实现过程中记录)
 
 ## Status
-**Currently in Phase 1** - 设计多源推文发现架构
+**Phase 1 Complete** - 已完成架构设计和MVP规划
+
+详细设计见: notes.md
+MVP开发计划见: mvp_plan.md
+
+**下一步**: 需要用户确认MVP计划，然后进入Phase 0（可行性验证）

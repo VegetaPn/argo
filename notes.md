@@ -14,159 +14,143 @@
 - **时机精准**: 发布后5-15分钟内（早期评论曝光最高）
 - **多样性**: 不同来源，降低风险
 
-## 多源推文发现架构
+## 精简版：3个核心推文来源
 
-### 来源1: 大V列表监控 (Managed Influencers)
+### 来源1: 大V列表监控 (Managed Influencers) ⭐️
 ```python
 优先级: HIGH
-频率: 每5分钟检查一次
-配置: influencers/managed.json
+频率: 每10分钟检查一次
+每次获取: 最多3-5条新推文
 
 流程:
-1. 遍历managed influencers列表
+1. 遍历managed influencers列表（建议5-10个精选大V）
 2. 使用bird CLI获取每个用户的最新推文
-3. 筛选出15分钟内的新推文
+3. 筛选出30分钟内的新推文
 4. 自动进入候选池
 
 bird命令:
-- bird read @username --limit 5
-- 解析JSON获取推文详情
+- bird read @username --limit 3
+
+优势:
+- 精准相关，符合你的兴趣
+- 质量有保证
+- API调用少，不易限流
 ```
 
-### 来源2: 话题关键词搜索 (Topic Search)
+### 来源2: 话题关键词搜索 (Topic Search) ⭐️
 ```python
 优先级: MEDIUM
-频率: 每10分钟一轮
-配置: config/search_topics.yaml
+频率: 每15分钟一轮
+每次获取: 3-5条热门推文
 
 话题配置示例:
 topics:
-  - keywords: ["AI", "Claude", "LLM"]
+  - keywords: ["AI", "Claude"]
+    min_likes: 200
+  - keywords: ["startup", "building"]
     min_likes: 100
-    max_age_minutes: 30
-  - keywords: ["startup", "founder", "building"]
-    min_likes: 50
-    max_age_minutes: 20
 
 流程:
-1. 遍历配置的话题关键词
-2. bird search "AI OR Claude" --min-likes 100
-3. 过滤出30分钟内的推文
-4. 计算相关性评分
-5. 高分推文进入候选池
+1. 选择1-2个关键话题（轮询）
+2. bird search "AI OR Claude" --min-likes 200 --limit 10
+3. 过滤出1小时内的推文
+4. 按互动率排序，取Top 3-5
 
 优势:
 - 主动发现热门内容
-- 不依赖大V列表
+- 作者更多样化
 - 可灵活配置话题
 ```
 
 ### 来源3: 热门推文流 (Trending Stream)
 ```python
-优先级: MEDIUM
-频率: 每15分钟
-方法: 搜索高互动推文
+优先级: LOW
+频率: 每30分钟
+每次获取: 2-3条爆款推文
 
 流程:
-1. bird search "min_likes:500 min_retweets:50" --limit 50
-2. 过滤出1小时内的推文
-3. 排除已处理过的
-4. 计算病毒式传播指数
-5. 高潜力推文进入候选池
+1. bird search "min_likes:1000" --limit 20
+2. 过滤出2小时内的推文
+3. 计算病毒式传播指数（retweet_rate）
+4. 取Top 2-3
 
 指标:
 - 转发/点赞比例 (>0.3表示传播力强)
 - 评论/点赞比例 (>0.1表示讨论度高)
-- 时间衰减因子
-```
-
-### 来源4: 关注网络互动 (Following Network)
-```python
-优先级: LOW
-频率: 每30分钟
-方法: 分析你关注的人在互动什么
-
-流程:
-1. 获取你最近点赞/转发的推文
-2. 分析这些推文的作者
-3. 如果作者不在你的managed列表，获取其最新推文
-4. 评估是否值得互动
 
 优势:
-- 发现你感兴趣的新账号
-- 与你的兴趣自然对齐
-- 扩展社交网络
-
-bird命令:
-- bird timeline --likes  # 获取你的点赞
-- 解析作者信息
+- 捕获正在爆火的推文
+- 潜在曝光量大
 ```
 
-### 来源5: 智能推荐 (Smart Recommendations)
-```python
-优先级: LOW
-频率: 每小时
-方法: 基于历史成功数据推荐
-
-流程:
-1. 分析历史成功评论的特征
-   - 推文话题、作者类型、互动水平
-2. 构建推荐模型
-3. 搜索符合模式的新推文
-4. 推荐得分排序
-
-机器学习特征:
-- 作者粉丝数范围
-- 推文长度、格式
-- 发布时间段
-- 话题分布
-```
-
-## 推文收集器实现
+## 推文收集器实现（精简版）
 
 ### 核心类设计
 ```python
 class TweetCollector:
     def __init__(self):
         self.sources = [
-            ManagedInfluencerSource(),
-            TopicSearchSource(),
-            TrendingStreamSource(),
-            FollowingNetworkSource(),
-            SmartRecommendationSource()
+            ManagedInfluencerSource(),     # 大V监控
+            TopicSearchSource(),            # 话题搜索
+            # TrendingStreamSource() 可选，初期不启用
         ]
 
-    async def collect_tweets(self) -> List[Tweet]:
-        """并发从所有来源收集推文"""
-        tasks = [source.fetch() for source in self.sources]
-        results = await asyncio.gather(*tasks)
-        tweets = self.merge_and_deduplicate(results)
-        return self.filter_and_rank(tweets)
+    async def collect_tweets(self, max_tweets=10) -> List[Tweet]:
+        """收集少量高质量推文"""
+        all_tweets = []
+
+        # 来源1: 大V监控 (优先，最多5条)
+        managed_tweets = await self.sources[0].fetch(limit=5)
+        all_tweets.extend(managed_tweets)
+
+        # 如果大V推文不足，补充话题搜索
+        if len(all_tweets) < max_tweets:
+            remaining = max_tweets - len(all_tweets)
+            topic_tweets = await self.sources[1].fetch(limit=remaining)
+            all_tweets.extend(topic_tweets)
+
+        # 去重、过滤、排序
+        tweets = self.filter_and_rank(all_tweets)
+        return tweets[:max_tweets]  # 最多返回10条
 
     def filter_and_rank(self, tweets):
         """过滤和排序"""
-        # 1. 去重（同一推文从多个来源发现）
-        # 2. 过滤已处理过的
-        # 3. 按优先级和评分排序
-        # 4. 返回Top 50
+        # 1. 去重（同一推文ID）
+        # 2. 过滤已评论过的（24小时内）
+        # 3. 过滤黑名单作者
+        # 4. 按优先级排序：大V > 话题搜索
+        # 5. 二次排序：trending_score
 ```
 
-### 数据流
+### 数据流（精简版）
 ```
-[5个来源并发采集]
-    ↓
-[合并去重] → 原始推文池 (100-200条/小时)
-    ↓
-[初步过滤]
-  - 移除已评论的
-  - 移除黑名单作者
-  - 移除不相关话题
-    ↓
-[趋势分析] → 计算trending_score
-    ↓
-[评分排序] → Top 50候选推文
-    ↓
-[存储] → tweets/pending/
+[大V监控] ─────→ 3-5条推文
+     ↓
+[话题搜索] ─────→ 补充到10条
+     ↓
+[去重过滤] ─────→ 移除已处理、黑名单
+     ↓
+[趋势评分] ─────→ trending_score排序
+     ↓
+[返回Top 10] ───→ 推送给用户审核
+```
+
+### 运行频率控制
+```python
+# 手动模式
+每次执行命令时收集10条 → 生成评论 → 用户审核
+
+# 半自动模式
+每30分钟收集一次 → 最多10条新推文
+→ 自动生成评论
+→ 推送通知
+→ 用户审核批准
+→ 发布
+
+# 限流保护
+- 每个来源限制请求频率
+- bird CLI调用间隔 >= 2秒
+- 每小时最多收集30条推文
 ```
 
 ## 配置文件设计
@@ -237,21 +221,31 @@ notification:
   sound: true
 ```
 
-## 预期效果
+## 预期效果（精简版）
 
-### 推文数量（每小时）
-- 大V列表: 5-10条
-- 话题搜索: 15-25条
-- 热门推文流: 20-30条
-- 关注网络: 5-10条
-- 智能推荐: 10-15条
-**总计: 55-90条候选推文/小时**
+### 推文数量控制
+**手动模式**：
+- 每次执行收集10条候选推文
+- 用户可以自由选择评论哪几条
+- 建议：每次评论2-3条即可
 
-### 质量保证
-- 多源交叉验证（同一推文被多个来源发现 → 高质量信号）
-- 趋势分析过滤低质量推文
-- 用户画像匹配度评分
-- 最终呈现给用户：Top 10-20条/小时
+**半自动模式**：
+- 每30分钟收集一次，最多10条
+- 自动生成评论后推送通知
+- 用户审核批准后发布
+- 预计：每小时2-3条评论（保持自然频率）
+
+### 质量优于数量
+- 优先大V列表（精准相关）
+- 补充话题搜索（扩大覆盖）
+- 严格过滤（trending_score > 60）
+- 最终呈现：10条高质量候选/次
+
+### API调用限制
+- 大V监控：5-10个大V × 每次3条 = 15-30条/次
+- 话题搜索：1-2个话题 × 每次10条 = 10-20条/次
+- bird CLI调用间隔2秒，避免限流
+- 总计：每小时约60-80次bird调用（安全范围）
 
 ## 下一步
 1. 实现基础的TweetCollector框架
