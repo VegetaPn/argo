@@ -77,7 +77,43 @@ argo/growth/
 ```
 
 ## Errors Encountered
-(将在实现过程中记录)
+
+### Phase 0 - bird CLI测试
+- bird read --limit参数不存在 → 解决：使用user-tweets -n命令
+- bird不支持min_likes等高级搜索过滤 → 解决：客户端过滤
+
+## Phase 0 验证结果
+
+### ✅ bird CLI测试完成
+**结论**: 完全可行，满足所有MVP需求
+
+**核心发现**:
+1. 认证：自动从Chrome提取cookies，无需API密钥
+2. 数据完整：包含所有需要的字段（点赞、转发、评论、时间）
+3. 功能齐全：user-tweets（获取推文）、search（搜索）、reply（评论）
+4. 性能可接受：2-3秒/请求
+
+**详细报告**: bird_cli_test_report.md
+
+### ✅ Claude Agent SDK测试完成
+**结论**: 完全满足评论生成需求
+
+**核心发现**:
+1. 用户画像注入：通过system_prompt参数
+2. 示例学习：集成在system_prompt中
+3. Session记忆：支持多轮迭代优化
+4. 生成质量：高质量、符合风格
+
+**详细报告**: agent_sdk_research.md
+
+### 最终技术栈
+```yaml
+推文获取: bird CLI
+评论生成: Claude Agent SDK
+存储: JSON文件
+事件驱动: EventBus (已有)
+定时任务: APScheduler
+```
 
 ## Status
 **Phase 1 Complete** - 已完成架构设计和MVP规划
