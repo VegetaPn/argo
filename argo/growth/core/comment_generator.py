@@ -44,13 +44,16 @@ class CommentGenerator:
 任务: 为X推文生成评论
 
 要求:
-1. 长度: 80-250字符（中文约40-120字）
-2. 风格: 符合用户画像，有梗但不失专业
-3. 内容: 有价值，不空洞，不过度营销
-4. 自然: 像真人评论，可以用emoji但不要太多
-5. 避免: 政治、争议话题、spam
+1. 语言匹配: 评论必须使用与推文正文相同的语言（中文/英文/日文等）
+2. 长度: 80-250字符（中文约40-120字）
+3. 风格: 符合用户画像，有梗但不失专业
+4. 内容: 有价值，不空洞，不过度营销
+5. 自然: 像真人评论，可以用emoji但不要太多
+6. 避免: 政治、争议话题、spam
 
-重要: 直接输出评论内容，不要加"评论："等前缀。
+重要:
+- 直接输出评论内容，不要加"评论："等前缀
+- 必须使用与推文相同的语言
 """
 
     async def generate(self, tweet: Tweet) -> Comment:
@@ -69,6 +72,9 @@ class CommentGenerator:
 内容: {tweet.text}
 互动数据: {tweet.like_count}赞 | {tweet.retweet_count}转发 | {tweet.reply_count}评论
 趋势评分: {tweet.trending_score}/100
+
+重要：评论必须使用与推文正文相同的语言（中文/英文/日文等）。
+如果推文是英文，评论也用英文；如果推文是中文，评论也用中文。
 
 生成一条符合我风格的评论。
 """
@@ -89,7 +95,7 @@ class CommentGenerator:
                     session_id = message.session_id
                 if hasattr(message, "result"):
                     content = message.result
-                    break
+                    # Don't break - let the generator finish naturally
 
         except Exception as e:
             raise Exception(f"Failed to generate comment: {e}")
@@ -143,7 +149,7 @@ class CommentGenerator:
             ):
                 if hasattr(message, "result"):
                     refined_content = message.result
-                    break
+                    # Don't break - let the generator finish naturally
 
         except Exception as e:
             raise Exception(f"Failed to refine comment: {e}")

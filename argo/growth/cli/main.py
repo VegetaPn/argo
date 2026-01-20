@@ -4,6 +4,7 @@ import asyncio
 import yaml
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 import argparse
 
 from argo.growth.core.bird_client import BirdClient, BirdClientError
@@ -29,6 +30,7 @@ class ArgoGrowth:
 
         # 初始化组件
         self.store = FileStore(self.data_dir)
+        self._init_influencers_from_config()  # 从配置初始化influencers
         self.bird = BirdClient(delay=self.settings['rate_limit']['delay_seconds'])
         self.collector = TweetCollector(self.bird, self.store)
         self.analyzer = TrendAnalyzer(
@@ -45,6 +47,59 @@ class ArgoGrowth:
 
         with open(path, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
+
+    def _init_influencers_from_config(self):
+        """从配置文件初始化influencers到数据存储"""
+        config_file = self.config_dir / "influencers.yaml"
+
+        # 如果配置文件不存在，跳过
+        if not config_file.exists():
+            return
+
+        managed_file = self.data_dir / "influencers" / "managed.json"
+
+        # 检查是否需要重新加载
+        should_reload = False
+
+        if not managed_file.exists():
+            # managed.json不存在，需要加载
+            should_reload = True
+        else:
+            # 比较修改时间，如果YAML比managed.json新，重新加载
+            config_mtime = config_file.stat().st_mtime
+            managed_mtime = managed_file.stat().st_mtime
+
+            if config_mtime > managed_mtime:
+                print(f"⚠️  influencers.yaml has been modified, reloading...")
+                should_reload = True
+
+        if not should_reload:
+            return
+
+        # 从YAML加载配置
+        config = self._load_yaml(config_file)
+        influencers_data = config.get('influencers', [])
+
+        if not influencers_data:
+            return
+
+        # 转换为Influencer对象
+        influencers = []
+        for item in influencers_data:
+            influencer = Influencer(
+                username=item['username'],
+                user_id=item.get('user_id', ''),
+                priority=item.get('priority', 'medium'),
+                check_interval=item.get('check_interval', 15),
+                topics=item.get('topics', []),
+                notes=item.get('notes', ''),
+                added_at=datetime.now()
+            )
+            influencers.append(influencer)
+
+        # 保存到managed.json
+        self.store.save_influencers(influencers)
+        print(f"✅ Loaded {len(influencers)} influencer(s) from config")
 
     def check_auth(self):
         """检查bird CLI认证状态"""

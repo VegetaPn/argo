@@ -91,7 +91,7 @@ class TrendAnalyzer:
         filtered = [t for t in sorted_tweets if t.trending_score >= min_score]
 
         # 保护逻辑：如果过滤后少于min_tweets，放宽条件
-        if len(filtered) < min_tweets and len(sorted_tweets) >= min_tweets:
+        if len(filtered) < min_tweets:
             print(f"⚠️  Only {len(filtered)} tweets passed min_score={min_score}")
             print(f"   Relaxing filter to ensure at least {min_tweets} tweets...")
             filtered = sorted_tweets[:min_tweets]

@@ -12,6 +12,14 @@ influencers:
       - "AI"
       - "space"
     notes: "Tesla/SpaceX CEO，关注技术和创新话题"
+  - username: "himself65"
+    user_id: "3150623335"
+    priority: "high"        # high, medium, low
+    check_interval: 10      # 检查间隔（分钟）
+    topics:
+      - "daily"
+      - "funny"
+    notes: "有意思的博主"
 
   # 添加更多大V
   # - username: "sama"

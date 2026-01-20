@@ -44,6 +44,8 @@ influencers:
     topics: ["AI", "Tech"]
 ```
 
+**注意**：修改 `influencers.yaml` 后，下次运行 `scan` 命令时会自动重新加载。程序会比较文件修改时间，如果 YAML 比 `data/influencers/managed.json` 新，就会自动更新。
+
 ### 2. 配置用户画像
 
 编辑 `argo/growth/config/user_profile.yaml` 来定制你的评论风格。
@@ -241,3 +243,29 @@ pytest tests/
 ## License
 
 MIT
+
+## 配置管理
+
+### Influencers配置自动重载
+
+程序会自动检测 `influencers.yaml` 的修改：
+
+1. **首次运行**：从 `influencers.yaml` 加载配置，保存到 `data/influencers/managed.json`
+2. **后续运行**：比较两个文件的修改时间
+   - 如果 YAML 比 JSON 新 → 自动重新加载 ✅
+   - 如果 YAML 未修改 → 使用现有的 JSON
+
+这意味着：
+- ✅ 修改 `influencers.yaml` 后直接运行即可，无需手动删除 JSON
+- ✅ 如果只是手动修改了 `managed.json`（不推荐），不会被覆盖
+- ⚠️  建议始终修改 YAML 配置文件，不要直接修改 JSON
+
+### 评论语言匹配
+
+评论生成器会自动检测推文语言，并使用相同语言回复：
+
+- 推文是英文 → 评论用英文
+- 推文是中文 → 评论用中文
+- 推文是日文 → 评论用日文
+
+这是通过在 system prompt 中明确指示 Claude 匹配语言实现的。
