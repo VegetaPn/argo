@@ -231,10 +231,11 @@ class BrowserClient:
             print("📸 Taking snapshot...")
             output = self._run_command(["snapshot", "-i"])
 
-            # 总是打印前 3000 字符，帮助调试
-            print("\n=== Snapshot Output (first 3000 chars) ===")
-            print(output[:3000])
-            print("=== End Snapshot ===\n")
+            # Debug 模式下才打印
+            if self.headed:
+                print("\n=== Snapshot Output (first 3000 chars) ===")
+                print(output[:3000])
+                print("=== End Snapshot ===\n")
 
             # 从 snapshot 中找到 textbox 的 ref
             print("✍️  Finding reply input box and filling text...")
