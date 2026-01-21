@@ -331,26 +331,43 @@ Twitter的页面结构可能更新。如果发生这种情况：
 
 ## 🔑 Twitter 登录设置（重要）
 
-**推荐方式：使用真实 Chrome 浏览器（避免 Twitter 检测）**
+**推荐方式：使用真实 Chrome 浏览器（Headless 模式，后台运行）**
+
+### 首次使用
 
 ```bash
-# 1. 启动 Chrome（只需一次）
-./start_chrome.sh
+# 1. 启动 Chrome 并显示窗口（首次需要登录）
+./start_chrome.sh --show-window
 
 # 2. 在 Chrome 中手动登录 Twitter
 
-# 3. 完成！现在可以正常使用
+# 3. 登录后切换到后台模式（不显示窗口）
+./stop_chrome.sh
+./start_chrome.sh
+
+# 4. 正常使用
 python main.py publish
+```
+
+### 日常使用
+
+```bash
+# 1. 启动 Chrome（后台运行，不显示窗口）
+./start_chrome.sh
+
+# 2. 正常使用
+python main.py review
 ```
 
 详细说明请查看 [SETUP_TWITTER_REAL_CHROME.md](SETUP_TWITTER_REAL_CHROME.md)
 
 ### 工作原理
-- 使用真实的 Chrome 浏览器（不是自动化浏览器）
+- 使用真实的 Chrome 浏览器 Headless 模式（`--headless=new`）
+- Chrome 在后台运行，**不显示窗口，不影响使用**
 - agent-browser 通过 CDP (Chrome DevTools Protocol) 连接
 - Twitter 看到的是正常的 Chrome，不会检测为自动化
 - 登录状态保存在 `~/.argo/chrome-profile/`
-- 程序会自动连接到运行中的 Chrome
+- 需要调试时可以切换到窗口模式
 
 ### 替代方案（不推荐）
 

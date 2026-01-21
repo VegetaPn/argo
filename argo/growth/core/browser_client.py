@@ -231,78 +231,49 @@ class BrowserClient:
             print("📸 Taking snapshot...")
             output = self._run_command(["snapshot", "-i"])
 
-            if self.headed:
-                print("\n=== Snapshot Output (first 2000 chars) ===")
-                print(output[:2000])
-                print("=== End Snapshot ===\n")
+            # 总是打印前 3000 字符，帮助调试
+            print("\n=== Snapshot Output (first 3000 chars) ===")
+            print(output[:3000])
+            print("=== End Snapshot ===\n")
 
-            # 方法1: 点击"Reply"按钮打开回复框
-            print("💬 Opening reply box...")
-            reply_clicked = False
-
-            for reply_text in ["Reply", "回复", "返信"]:
-                try:
-                    self._run_command([
-                        "find", "role", "button",
-                        "click", "--name", reply_text
-                    ])
-                    print(f"   ✅ Clicked '{reply_text}' button")
-                    reply_clicked = True
-                    time.sleep(2)
-                    break
-                except:
-                    continue
-
-            if not reply_clicked:
-                print("⚠️  Could not find Reply button, trying direct input...")
-
-            # 获取新快照，查找输入框
-            print("📸 Taking new snapshot after clicking Reply...")
-            output = self._run_command(["snapshot", "-i"])
-
-            if self.headed:
-                print("\n=== Updated Snapshot (first 2000 chars) ===")
-                print(output[:2000])
-                print("=== End Snapshot ===\n")
-
-            # 方法2: 查找tweet composer输入框
-            print("✍️  Filling reply text...")
-
-            # 尝试多种方法查找输入框
+            # 从 snapshot 中找到 textbox 的 ref
+            print("✍️  Finding reply input box and filling text...")
             input_filled = False
+            textbox_ref = None
 
-            # 方法1: 通过 role textbox
-            if not input_filled:
+            # 从输出中查找 textbox 的 ref（格式：textbox ... [ref=e123]）
+            import re
+            # 匹配 textbox "xxx" [ref=e123] 或 textbox [ref=e123]
+            textbox_matches = re.findall(r'textbox[^\[]*\[ref=(e\d+)\]', output)
+
+            if textbox_matches:
+                textbox_ref = f"@{textbox_matches[0]}"
+                print(f"   Found textbox: {textbox_ref}")
+
+                # 使用 ref 填充内容
                 try:
-                    print("   Trying: find role textbox")
-                    self._run_command([
-                        "find", "role", "textbox",
-                        "fill", text
-                    ])
+                    print(f"   Trying: fill {textbox_ref}")
+                    self._run_command(["fill", textbox_ref, text])
                     input_filled = True
                     print("   ✅ Success!")
                 except Exception as e:
                     print(f"   ❌ Failed: {str(e)[:100]}")
+                    # 尝试 type 而不是 fill
+                    try:
+                        print(f"   Trying: type {textbox_ref}")
+                        self._run_command(["type", textbox_ref, text])
+                        input_filled = True
+                        print("   ✅ Success!")
+                    except Exception as e2:
+                        print(f"   ❌ Failed: {str(e2)[:100]}")
+            else:
+                print("   ⚠️  No textbox found in snapshot")
 
-            # 方法2: 使用 type 而不是 fill
-            if not input_filled:
-                try:
-                    print("   Trying: find role textbox + type")
-                    self._run_command([
-                        "find", "role", "textbox",
-                        "type", text
-                    ])
-                    input_filled = True
-                    print("   ✅ Success!")
-                except Exception as e:
-                    print(f"   ❌ Failed: {str(e)[:100]}")
-
-            # 方法3: 使用JavaScript注入
+            # 如果还是没成功，尝试 JavaScript 注入
             if not input_filled:
                 try:
                     print("   Trying: JavaScript injection")
-                    # 转义单引号
-                    escaped_text = text.replace("'", "\\'")
+                    escaped_text = text.replace("'", "\\'").replace('"', '\\"')
                     self._run_command([
                         "eval",
                         f"document.querySelector('[contenteditable=\"true\"]').textContent = '{escaped_text}'"
@@ -317,26 +288,34 @@ class BrowserClient:
 
             time.sleep(1)
 
-            # 发布回复
+            # 发布回复 - 也使用 ref
             print("🚀 Posting reply...")
             post_success = False
 
-            # 尝试查找Post按钮
-            for button_name in ["Post reply", "Reply", "Post", "发布", "返信"]:
-                try:
-                    print(f"   Trying: button with name='{button_name}'")
-                    self._run_command([
-                        "find", "role", "button",
-                        "click", "--name", button_name
-                    ])
-                    post_success = True
-                    print("   ✅ Success!")
-                    break
-                except Exception as e:
-                    print(f"   ❌ Failed: {str(e)[:100]}")
+            # 从 snapshot 中查找 Reply/Post 按钮（格式：button "Reply" [ref=e123]）
+            button_patterns = [
+                (r'button "Reply"[^\[]*\[ref=(e\d+)\]', 'Reply'),
+                (r'button "Post reply"[^\[]*\[ref=(e\d+)\]', 'Post reply'),
+                (r'button "Post"[^\[]*\[ref=(e\d+)\]', 'Post'),
+                (r'button "回复"[^\[]*\[ref=(e\d+)\]', '回复'),
+                (r'button "发布"[^\[]*\[ref=(e\d+)\]', '发布'),
+            ]
+
+            for pattern, name in button_patterns:
+                matches = re.findall(pattern, output)
+                if matches:
+                    button_ref = f"@{matches[0]}"
+                    try:
+                        print(f"   Trying: click {button_ref} ({name})")
+                        self._run_command(["click", button_ref])
+                        post_success = True
+                        print("   ✅ Success!")
+                        break
+                    except Exception as e:
+                        print(f"   ❌ Failed: {str(e)[:100]}")
 
             if not post_success:
-                raise BrowserClientError("Could not find Post button")
+                raise BrowserClientError("Could not find Post/Reply button")
 
             time.sleep(3)  # 等待发布完成
 

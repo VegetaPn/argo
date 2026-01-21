@@ -6,164 +6,140 @@ Twitter 能检测到 Playwright/自动化浏览器，显示"此浏览器或应�
 
 ## 解决方案
 
-使用真实的 Chrome 浏览器 + CDP (Chrome DevTools Protocol) 连接，这样 Twitter 看到的是正常的 Chrome 浏览器。
+使用真实的 Chrome 浏览器 + CDP (Chrome DevTools Protocol) 连接，支持两种模式：
 
-## 设置步骤
+1. **Headless 模式（推荐）**：Chrome 在后台运行，不显示窗口，不影响使用
+2. **Headed 模式**：显示窗口，用于首次登录
 
-### 1. 启动带调试端口的 Chrome
+## 快速开始
 
+### 首次使用（需要登录）
+
+```bash
+# 1. 启动 Chrome 并显示窗口（首次需要登录）
+./start_chrome.sh --show-window
+
+# 2. 在 Chrome 窗口中手动登录 Twitter
+
+# 3. 登录成功后，关闭并切换到后台模式
+./stop_chrome.sh
+./start_chrome.sh
+
+# 4. 正常使用（Chrome 在后台，不显示窗口）
+python main.py review
+```
+
+### 日常使用（已登录）
+
+```bash
+# 1. 启动 Chrome（后台模式，不显示窗口）
+./start_chrome.sh
+
+# 2. 正常使用
+python main.py scan
+python main.py review
+python main.py publish
+
+# 3. 使用完毕后（可选）
+./stop_chrome.sh
+```
+
+## 详细说明
+
+### Headless vs Headed 模式
+
+**Headless 模式（默认）**：
+- Chrome 在后台运行，不显示窗口
+- 使用 `--headless=new` 参数（新版 headless，更接近真实浏览器）
+- 不影响用户使用电脑
+- 登录状态保存在 `~/.argo/chrome-profile/`
+
+**Headed 模式（首次登录用）**：
+- 显示 Chrome 窗口
+- 用于首次登录 Twitter
+- 登录后可以关闭，切换回 headless 模式
+
+### 启动脚本使用
+
+```bash
+# Headless 模式（默认，后台运行）
+./start_chrome.sh
+
+# Headed 模式（显示窗口）
+./start_chrome.sh --show-window
+# 或
+./start_chrome.sh --headed
+
+# 停止 Chrome
+./stop_chrome.sh
+```
+
+### 手动启动 Chrome（如果不用脚本）
+
+**Headless 模式：**
+```bash
+# macOS
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --headless=new \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.argo/chrome-profile" \
+  --disable-gpu \
+  --no-sandbox \
+  https://twitter.com/home &
+
+# Linux
+google-chrome \
+  --headless=new \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.argo/chrome-profile" \
+  --disable-gpu \
+  --no-sandbox \
+  https://twitter.com/home &
+
+# Windows (PowerShell)
+& "C:\Program Files\Google\Chrome\Application\chrome.exe" `
+  --headless=new `
+  --remote-debugging-port=9222 `
+  --user-data-dir="$env:USERPROFILE\.argo\chrome-profile" `
+  https://twitter.com/home
+```
+
+**Headed 模式（首次登录）：**
 ```bash
 # macOS
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
   --remote-debugging-port=9222 \
   --user-data-dir="$HOME/.argo/chrome-profile" \
   https://twitter.com/login
-
-# Linux
-google-chrome \
-  --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.argo/chrome-profile" \
-  https://twitter.com/login
-
-# Windows (PowerShell)
-& "C:\Program Files\Google\Chrome\Application\chrome.exe" `
-  --remote-debugging-port=9222 `
-  --user-data-dir="$env:USERPROFILE\.argo\chrome-profile" `
-  https://twitter.com/login
 ```
 
-**重要说明**：
-- `--remote-debugging-port=9222`: 开启调试端口，让 agent-browser 可以连接
-- `--user-data-dir`: 使用独立的配置文件目录，保存登录状态
-- Chrome 窗口会保持打开，**不要关闭它**
+### 工作原理
 
-### 2. 在 Chrome 中手动登录 Twitter
+1. **首次登录（Headed 模式）**：
+   - 启动 Chrome 窗口
+   - 手动登录 Twitter
+   - 登录信息保存在 `~/.argo/chrome-profile/`
 
-在打开的 Chrome 窗口中：
-1. 正常登录 Twitter（输入用户名、密码、二步验证等）
-2. 确认登录成功，能看到首页
-3. **保持 Chrome 窗口打开**
+2. **日常使用（Headless 模式）**：
+   - Chrome 在后台运行，不显示窗口
+   - 从 profile 加载登录状态（已经登录）
+   - agent-browser 通过 CDP 连接控制
+   - Twitter 看到的是真实的 Chrome 浏览器
 
-### 3. 测试 agent-browser 连接
+### 为什么 Headless 模式不会被检测？
 
-在另一个终端窗口中：
-
-```bash
-# 测试连接
-agent-browser --cdp 9222 get url
-
-# 应该输出：https://twitter.com/home 或类似的 Twitter URL
-```
-
-如果成功，说明连接正常！
-
-### 4. 测试发布评论
-
-```bash
-# 使用 --cdp 模式测试
-agent-browser --cdp 9222 open https://twitter.com/elonmusk/status/1234567890
-agent-browser --cdp 9222 snapshot -i
-```
-
-## 修改代码使用 CDP 模式
-
-修改 `argo/growth/cli/main.py`，让 BrowserClient 使用 CDP：
-
-```python
-self.browser = BrowserClient(
-    delay=self.settings['rate_limit']['delay_seconds'],
-    session_name="",
-    headed=debug,
-    use_cdp=True,  # 使用 CDP 模式
-    cdp_port=9222  # CDP 端口
-)
-```
-
-然后修改 `argo/growth/core/browser_client.py` 的 `_run_command` 方法：
-
-```python
-def _run_command(self, args: list[str], skip_rate_limit: bool = False) -> str:
-    if not skip_rate_limit:
-        self._rate_limit()
-
-    command = ["agent-browser"]
-
-    # 如果使用 CDP 模式，添加 --cdp 参数
-    if hasattr(self, 'use_cdp') and self.use_cdp:
-        command.extend(["--cdp", str(self.cdp_port)])
-    # ... 其他逻辑
-```
-
-## 使用流程
-
-### 每次使用前
-
-1. **启动 Chrome**（如果还没启动）：
-   ```bash
-   /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
-     --remote-debugging-port=9222 \
-     --user-data-dir="$HOME/.argo/chrome-profile" \
-     https://twitter.com/home
-   ```
-
-2. **确认登录状态**：
-   - 如果已登录，直接进行下一步
-   - 如果未登录，在 Chrome 中手动登录
-
-3. **运行程序**：
-   ```bash
-   python main.py review
-   # 或
-   python main.py publish
-   ```
-
-4. **使用完毕后**：
-   - 可以关闭 Chrome（登录状态会保存在 user-data-dir 中）
-   - 下次启动 Chrome 时会自动恢复登录状态
+- **传统 headless 问题**：容易被检测（缺少某些浏览器特征）
+- **新版 headless (`--headless=new`)**：Chrome 96+ 引入，与真实浏览器几乎完全相同
+- **使用 user profile**：保留完整的浏览器状态和登录信息
+- **CDP 连接**：不使用 Playwright 的自动化注入
 
 ## 优势
 
-✅ **不会被检测** - Twitter 看到的是真实的 Chrome 浏览器
+✅ **不会被检测** - Twitter 看到的是真实的 Chrome 浏览器（使用 `--headless=new`）
+✅ **后台运行** - Headless 模式不显示窗口，不影响使用
 ✅ **保持登录** - 使用 user-data-dir 保存配置和登录状态
-✅ **手动控制** - Chrome 窗口可见，可以随时手动干预
-✅ **调试方便** - 可以在 Chrome 中看到实际操作
-
-## 自动化脚本
-
-创建一个启动脚本 `start_chrome.sh`：
-
-```bash
-#!/bin/bash
-
-# macOS
-CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-USER_DATA_DIR="$HOME/.argo/chrome-profile"
-CDP_PORT=9222
-
-# 检查 Chrome 是否已经在运行
-if lsof -Pi :$CDP_PORT -sTCP:LISTEN -t >/dev/null ; then
-    echo "✅ Chrome is already running on port $CDP_PORT"
-else
-    echo "🚀 Starting Chrome with CDP on port $CDP_PORT..."
-    "$CHROME_PATH" \
-      --remote-debugging-port=$CDP_PORT \
-      --user-data-dir="$USER_DATA_DIR" \
-      https://twitter.com/home &
-
-    sleep 3
-    echo "✅ Chrome started!"
-fi
-
-# 测试连接
-echo "🔍 Testing connection..."
-agent-browser --cdp $CDP_PORT get url
-```
-
-使用：
-```bash
-chmod +x start_chrome.sh
-./start_chrome.sh
-```
+✅ **手动控制** - 需要时可以切换到 headed 模式查看窗口
+✅ **调试方便** - 出问题时可以启动窗口模式排查
 
 ## 故障排查
 
@@ -174,7 +150,7 @@ chmod +x start_chrome.sh
 lsof -i :9222
 
 # 关闭占用的进程
-kill <PID>
+./stop_chrome.sh
 ```
 
 ### Q: agent-browser 无法连接
@@ -184,34 +160,110 @@ kill <PID>
 lsof -i :9222
 
 # 如果没有，重新启动 Chrome
+./stop_chrome.sh
+./start_chrome.sh
 ```
 
-### Q: Twitter 还是显示"浏览器不安全"
+### Q: Headless 模式下 Twitter 还是显示"浏览器不安全"
 
-这不应该发生，因为我们使用的是真实的 Chrome。如果还是出现：
-1. 确认使用的是 `--cdp 9222` 参数
-2. 确认 Chrome 是正常启动的（不是 headless 模式）
-3. 检查 Chrome 版本是否是最新的
+这不应该发生，因为我们使用的是真实的 Chrome + `--headless=new`。如果还是出现：
+
+1. 确认 Chrome 版本是否足够新（96+）：
+   ```bash
+   /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version
+   ```
+
+2. 尝试先用 headed 模式登录，然后切换回 headless：
+   ```bash
+   ./stop_chrome.sh
+   ./start_chrome.sh --show-window
+   # 登录...
+   ./stop_chrome.sh
+   ./start_chrome.sh
+   ```
+
+3. 清除 profile 重新登录：
+   ```bash
+   ./stop_chrome.sh
+   rm -rf ~/.argo/chrome-profile
+   ./start_chrome.sh --show-window
+   # 重新登录
+   ```
+
+### Q: 想查看 Chrome 窗口（调试）
+
+```bash
+# 停止 headless 模式
+./stop_chrome.sh
+
+# 启动 headed 模式
+./start_chrome.sh --show-window
+
+# 然后运行程序，可以看到实际操作
+python main.py review
+```
 
 ### Q: 想关闭 Chrome 但保持登录
 
-直接关闭 Chrome 即可，登录状态会保存在 `~/.argo/chrome-profile` 中。下次启动 Chrome 时会自动恢复。
+直接关闭 Chrome 即可：
+```bash
+./stop_chrome.sh
+```
+
+登录状态会保存在 `~/.argo/chrome-profile` 中。下次启动时会自动恢复。
 
 ## 完整工作流
 
+### 首次使用
+
 ```bash
-# 1. 启动 Chrome（一次性设置）
+# 1. 启动 Chrome 并显示窗口（用于登录）
+./start_chrome.sh --show-window
+
+# 2. 在 Chrome 窗口中手动登录 Twitter
+
+# 3. 确认登录成功后，切换到后台模式
+./stop_chrome.sh
 ./start_chrome.sh
 
-# 2. 如果是首次使用，在 Chrome 中手动登录 Twitter
+# 4. 正常使用（Chrome 在后台，不显示窗口）
+python main.py scan
+python main.py review
+python main.py publish
+```
 
-# 3. 正常使用
+### 日常使用
+
+```bash
+# 1. 启动 Chrome（后台模式，不显示窗口）
+./start_chrome.sh
+
+# 2. 正常使用
 python main.py scan
 python main.py review
 python main.py publish
 
-# 4. 关闭 Chrome（可选）
-# 直接关闭窗口即可，登录状态会保存
+# 3. 使用完毕后（可选，Chrome 可以一直在后台运行）
+./stop_chrome.sh
+```
+
+### 调试模式
+
+```bash
+# 1. 启动 Chrome 并显示窗口
+./start_chrome.sh --show-window
+
+# 2. 运行程序，可以看到浏览器操作
+python main.py review
+
+# 3. 调试完成后，切换回后台模式
+./stop_chrome.sh
+./start_chrome.sh
 ```
 
 就是这样！🚀
+
+现在你可以：
+- ✅ 后台运行 Chrome，不影响使用
+- ✅ 避免 Twitter 检测
+- ✅ 随时切换到窗口模式调试
