@@ -8,6 +8,7 @@ from datetime import datetime
 import argparse
 
 from argo.growth.core.bird_client import BirdClient, BirdClientError
+from argo.growth.core.browser_client import BrowserClient
 from argo.growth.core.tweet_collector import TweetCollector
 from argo.growth.core.trend_analyzer import TrendAnalyzer
 from argo.growth.core.comment_generator import CommentGenerator
@@ -19,10 +20,12 @@ from argo.growth.cli.reviewer import run_review
 class ArgoGrowth:
     """Argo Growth CLI主程序"""
 
-    def __init__(self, config_dir: Optional[Path] = None, data_dir: Optional[Path] = None):
+    def __init__(self, config_dir: Optional[Path] = None, data_dir: Optional[Path] = None, debug: bool = False, use_cdp: bool = True):
         # 默认路径
         self.config_dir = config_dir or Path.cwd() / "argo" / "growth" / "config"
         self.data_dir = data_dir or Path.cwd() / "argo" / "growth" / "data"
+        self.debug = debug
+        self.use_cdp = use_cdp
 
         # 加载配置
         self.user_profile = self._load_yaml(self.config_dir / "user_profile.yaml")
@@ -32,6 +35,13 @@ class ArgoGrowth:
         self.store = FileStore(self.data_dir)
         self._init_influencers_from_config()  # 从配置初始化influencers
         self.bird = BirdClient(delay=self.settings['rate_limit']['delay_seconds'])
+        self.browser = BrowserClient(
+            delay=self.settings['rate_limit']['delay_seconds'],
+            session_name="",  # 使用默认 session
+            headed=debug,  # Debug 模式下显示浏览器（非CDP模式）
+            use_cdp=use_cdp,  # 默认使用 CDP 模式连接真实 Chrome
+            cdp_port=9222  # CDP 端口
+        )
         self.collector = TweetCollector(self.bird, self.store)
         self.analyzer = TrendAnalyzer(
             like_weight=self.settings['trend_analysis']['like_weight'],
@@ -179,14 +189,31 @@ class ArgoGrowth:
         print(f"   Published: {stats['published']}")
         print(f"   Rejected: {stats['rejected']}")
 
-    def review_comments(self):
-        """审核评论"""
-        print("\n📝 Starting comment review...")
-        run_review(self.store, self.bird, self.generator)
+    def review_comments(self, use_browser: bool = True):
+        """
+        审核评论
 
-    def publish_approved(self):
-        """发布已批准的评论"""
+        Args:
+            use_browser: 是否使用浏览器模式发布
+        """
+        print("\n📝 Starting comment review...")
+        run_review(self.store, self.bird, self.browser, self.generator, use_browser)
+
+    def publish_approved(self, use_browser: bool = True):
+        """
+        发布已批准的评论
+
+        Args:
+            use_browser: 是否使用浏览器模式（agent-browser），默认True
+        """
         print("\n🚀 Publishing approved comments...")
+
+        # 如果使用浏览器模式，先检查登录状态
+        if use_browser:
+            if not self.browser.ensure_logged_in():
+                print("❌ Please login to Twitter first")
+                return
+
         approved = self.store.load_comments_by_status('approved')
 
         if not approved:
@@ -199,7 +226,22 @@ class ArgoGrowth:
         for i, comment in enumerate(approved, 1):
             print(f"\n[{i}/{len(approved)}] Publishing comment {comment.id[:8]}...")
 
-            if self.bird.post_reply(comment.tweet_id, comment.content):
+            # 构建tweet URL
+            # 从tweet_id获取推文详情（需要获取author username）
+            tweet = self.bird.get_tweet_by_id(comment.tweet_id)
+            if not tweet:
+                print(f"   ⚠️  Could not find tweet {comment.tweet_id}, skipping")
+                continue
+
+            tweet_url = f"https://twitter.com/{tweet.author.username}/status/{comment.tweet_id}"
+
+            # 使用浏览器或bird CLI发布
+            if use_browser:
+                success = self.browser.post_reply(tweet_url, comment.content)
+            else:
+                success = self.bird.post_reply(comment.tweet_id, comment.content)
+
+            if success:
                 self.store.update_comment_status(comment.id, 'published')
                 success_count += 1
                 print("   ✅ Published")
@@ -259,10 +301,38 @@ def main():
         help='Data storage directory (default: ./argo/growth/data)'
     )
 
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug mode (show browser window)'
+    )
+
+    parser.add_argument(
+        '--no-cdp',
+        action='store_true',
+        help='Disable CDP mode (use agent-browser without real Chrome connection)'
+    )
+
     args = parser.parse_args()
 
     try:
-        app = ArgoGrowth(config_dir=args.config_dir, data_dir=args.data_dir)
+        # 如果是 debug 模式，使用 headed browser
+        if args.debug:
+            print("🐛 Debug mode enabled - browser window will be visible")
+
+        # CDP 模式默认启用（推荐），除非用户明确禁用
+        use_cdp = not args.no_cdp
+        if use_cdp:
+            print("🔌 CDP mode enabled - will connect to real Chrome")
+            print("   Make sure Chrome is running with: --remote-debugging-port=9222")
+            print("   See SETUP_TWITTER_REAL_CHROME.md for setup instructions")
+
+        app = ArgoGrowth(
+            config_dir=args.config_dir,
+            data_dir=args.data_dir,
+            debug=args.debug,
+            use_cdp=use_cdp
+        )
 
         if args.command == 'auth':
             app.check_auth()

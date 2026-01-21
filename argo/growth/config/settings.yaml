@@ -8,7 +8,7 @@ rate_limit:
 # 推文收集设置
 collection:
   max_tweets_per_scan: 10       # 每次扫描最多处理的推文数
-  max_tweet_age_minutes: 30     # 只处理N分钟内的新推文
+  max_tweet_age_minutes: 120     # 只处理N分钟内的新推文
 
 # 趋势分析设置
 trend_analysis:

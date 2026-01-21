@@ -269,3 +269,96 @@ MIT
 - 推文是日文 → 评论用日文
 
 这是通过在 system prompt 中明确指示 Claude 匹配语言实现的。
+
+## 使用 agent-browser 发布评论
+
+由于 bird CLI 容易被 Twitter 检测为自动化操作（HTTP 403错误），系统默认使用 **agent-browser** 来模拟真实浏览器操作发布评论。
+
+### 首次使用设置
+
+1. **安装 agent-browser skill** （应该已安装）
+   
+2. **手动登录 Twitter**
+   ```bash
+   agent-browser --session argo-growth open https://twitter.com/login --headed
+   ```
+   在弹出的浏览器中登录Twitter，然后保持会话
+
+3. **运行工作流**
+   ```bash
+   # 正常使用
+   python main.py review   # 审核并发布（使用浏览器）
+   python main.py publish  # 发布已批准的评论（使用浏览器）
+   ```
+
+### 工作原理
+
+- **review/publish 命令默认使用 agent-browser**
+- 首次发布评论时会检查 Twitter 登录状态
+- 使用浏览器自动化操作（点击Reply按钮、填写内容、发布）
+- 比 bird CLI 更不容易被检测为 bot
+
+### agent-browser 优势
+
+✅ **模拟真实用户行为** - 使用真实浏览器，不会被识别为API调用
+✅ **保持登录状态** - 通过cookies保持会话
+✅ **支持复杂交互** - 处理各种前端逻辑
+✅ **避免限流** - 不会触发API rate limit
+
+### 故障排查
+
+#### 登录检查失败
+```bash
+# 重新登录
+agent-browser --session argo-growth open https://twitter.com/login --headed
+# 手动登录后重试
+```
+
+#### 找不到Reply按钮
+Twitter的页面结构可能更新。如果发生这种情况：
+1. 手动在浏览器中打开推文
+2. 使用 `agent-browser snapshot -i` 查看元素
+3. 根据实际元素调整 `browser_client.py` 中的选择器
+
+#### 回退到 bird CLI
+如果需要使用 bird CLI（不推荐，容易被限流）：
+```bash
+# 修改代码，在 main.py 的 review_comments 和 publish_approved 方法中
+# 将 use_browser=True 改为 use_browser=False
+```
+
+---
+
+## 🔑 Twitter 登录设置（重要）
+
+**推荐方式：使用真实 Chrome 浏览器（避免 Twitter 检测）**
+
+```bash
+# 1. 启动 Chrome（只需一次）
+./start_chrome.sh
+
+# 2. 在 Chrome 中手动登录 Twitter
+
+# 3. 完成！现在可以正常使用
+python main.py publish
+```
+
+详细说明请查看 [SETUP_TWITTER_REAL_CHROME.md](SETUP_TWITTER_REAL_CHROME.md)
+
+### 工作原理
+- 使用真实的 Chrome 浏览器（不是自动化浏览器）
+- agent-browser 通过 CDP (Chrome DevTools Protocol) 连接
+- Twitter 看到的是正常的 Chrome，不会检测为自动化
+- 登录状态保存在 `~/.argo/chrome-profile/`
+- 程序会自动连接到运行中的 Chrome
+
+### 替代方案（不推荐）
+
+如果你想使用 agent-browser 的自动化模式（可能被 Twitter 检测）：
+
+```bash
+# 禁用 CDP 模式
+python main.py publish --no-cdp
+```
+
+参考 [SETUP_TWITTER_LOGIN.md](SETUP_TWITTER_LOGIN.md)（可能遇到"浏览器不安全"错误）

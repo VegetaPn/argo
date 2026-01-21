@@ -5,6 +5,7 @@ from typing import List, Optional
 from argo.growth.storage.models import Tweet, Comment
 from argo.growth.storage.file_store import FileStore
 from argo.growth.core.bird_client import BirdClient
+from argo.growth.core.browser_client import BrowserClient
 from argo.growth.core.comment_generator import CommentGenerator
 
 
@@ -15,11 +16,15 @@ class Reviewer:
         self,
         store: FileStore,
         bird: BirdClient,
-        generator: CommentGenerator
+        browser: BrowserClient,
+        generator: CommentGenerator,
+        use_browser: bool = True
     ):
         self.store = store
         self.bird = bird
+        self.browser = browser
         self.generator = generator
+        self.use_browser = use_browser
 
     def display_tweet(self, tweet: Tweet, index: int, total: int):
         """显示推文信息"""
@@ -76,7 +81,29 @@ class Reviewer:
             if choice == 'p':
                 # 立即发布
                 print("\n🚀 Publishing comment...")
-                success = self.bird.post_reply(tweet.id, current_comment.content)
+
+                # 如果使用浏览器且是第一次发布，检查登录状态
+                if self.use_browser and not hasattr(self, '_browser_checked'):
+                    if not self.browser.ensure_logged_in():
+                        print("❌ Please login to Twitter first")
+                        print("Would you like to save it as 'approved' for later? [y/n]")
+                        retry = input().strip().lower()
+                        if retry == 'y':
+                            self.store.update_comment_status(current_comment.id, 'approved')
+                            return 'approved'
+                        else:
+                            self.store.update_comment_status(current_comment.id, 'rejected')
+                            return 'skipped'
+                    self._browser_checked = True
+
+                # 构建tweet URL
+                tweet_url = f"https://twitter.com/{tweet.author.username}/status/{tweet.id}"
+
+                # 使用浏览器或bird CLI发布
+                if self.use_browser:
+                    success = self.browser.post_reply(tweet_url, current_comment.content)
+                else:
+                    success = self.bird.post_reply(tweet.id, current_comment.content)
 
                 if success:
                     print("✅ Comment published successfully!")
@@ -190,7 +217,13 @@ class Reviewer:
         print("=" * 80)
 
 
-def run_review(store: FileStore, bird: BirdClient, generator: CommentGenerator):
+def run_review(
+    store: FileStore,
+    bird: BirdClient,
+    browser: BrowserClient,
+    generator: CommentGenerator,
+    use_browser: bool = True
+):
     """运行审核流程（同步入口）"""
     # 加载待审核评论
     pending_comments = store.load_pending_comments()
@@ -202,8 +235,7 @@ def run_review(store: FileStore, bird: BirdClient, generator: CommentGenerator):
     # 加载对应的推文
     pairs = []
     for comment in pending_comments:
-        # 从存储中查找推文（需要遍历最近的目录）
-        # 简化处理：从comment的tweet_id直接用bird获取
+        # 从comment的tweet_id直接用bird获取
         tweet = bird.get_tweet_by_id(comment.tweet_id)
         if tweet:
             pairs.append((tweet, comment))
@@ -211,5 +243,5 @@ def run_review(store: FileStore, bird: BirdClient, generator: CommentGenerator):
             print(f"⚠️  Warning: Tweet {comment.tweet_id} not found, skipping comment")
 
     # 运行异步审核
-    reviewer = Reviewer(store, bird, generator)
+    reviewer = Reviewer(store, bird, browser, generator, use_browser)
     asyncio.run(reviewer.review_batch(pairs))
