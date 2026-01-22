@@ -224,31 +224,74 @@ class ArgoGrowth:
 
         success_count = 0
         for i, comment in enumerate(approved, 1):
-            print(f"\n[{i}/{len(approved)}] Publishing comment {comment.id[:8]}...")
+            print(f"\n{'='*80}")
+            print(f"[{i}/{len(approved)}] Comment ID: {comment.id[:8]}")
 
-            # 构建tweet URL
-            # 从tweet_id获取推文详情（需要获取author username）
+            # 获取推文信息
             tweet = self.bird.get_tweet_by_id(comment.tweet_id)
             if not tweet:
                 print(f"   ⚠️  Could not find tweet {comment.tweet_id}, skipping")
                 continue
 
-            tweet_url = f"https://twitter.com/{tweet.author.username}/status/{comment.tweet_id}"
+            # 显示推文和评论内容
+            print(f"\n📝 Tweet by @{tweet.author.username}:")
+            print(f"   {tweet.text[:100]}{'...' if len(tweet.text) > 100 else ''}")
+            print(f"\n💬 Comment to publish:")
+            print(f"   \"{comment.content}\"")
+            print(f"\n🔗 Tweet URL: https://twitter.com/{tweet.author.username}/status/{comment.tweet_id}")
 
-            # 使用浏览器或bird CLI发布
-            if use_browser:
-                success = self.browser.post_reply(tweet_url, comment.content)
-            else:
-                success = self.bird.post_reply(comment.tweet_id, comment.content)
+            # 人工确认
+            current_content = comment.content
+            while True:
+                print(f"\n💬 Current comment: \"{current_content}\"")
+                confirm = input("\n❓ [y]es / [e]dit / [s]kip / [q]uit: ").lower().strip()
 
-            if success:
-                self.store.update_comment_status(comment.id, 'published')
-                success_count += 1
-                print("   ✅ Published")
-            else:
-                print("   ❌ Failed")
+                if confirm == 'y' or confirm == 'yes':
+                    print(f"\n📤 Publishing...")
+                    tweet_url = f"https://twitter.com/{tweet.author.username}/status/{comment.tweet_id}"
 
-        print(f"\n✅ Successfully published {success_count}/{len(approved)} comment(s)")
+                    # 使用浏览器或bird CLI发布
+                    if use_browser:
+                        success = self.browser.post_reply(tweet_url, current_content)
+                    else:
+                        success = self.bird.post_reply(comment.tweet_id, current_content)
+
+                    if success:
+                        # 如果内容被修改了，更新到数据库
+                        if current_content != comment.content:
+                            comment.content = current_content
+                            self.store.save_comment(comment)
+                        self.store.update_comment_status(comment.id, 'published')
+                        success_count += 1
+                        print("   ✅ Published successfully!")
+                    else:
+                        print("   ❌ Failed to publish")
+                    break
+
+                elif confirm == 'e' or confirm == 'edit':
+                    print(f"\n✏️  Edit comment (press Enter to keep current):")
+                    new_content = input(f"   > ").strip()
+                    if new_content:
+                        current_content = new_content
+                        print(f"   ✅ Updated to: \"{current_content}\"")
+                    else:
+                        print("   ℹ️  Kept original content")
+                    # 继续循环，再次确认
+
+                elif confirm == 's' or confirm == 'skip':
+                    print("   ⏭️  Skipped")
+                    break
+
+                elif confirm == 'q' or confirm == 'quit':
+                    print("\n🛑 Quit publishing")
+                    print(f"\n✅ Successfully published {success_count}/{i-1} comment(s)")
+                    return
+
+                else:
+                    print("   Invalid input. Please enter y/e/s/q")
+
+        print(f"\n{'='*80}")
+        print(f"✅ Successfully published {success_count}/{len(approved)} comment(s)")
 
     def show_stats(self):
         """显示统计信息"""

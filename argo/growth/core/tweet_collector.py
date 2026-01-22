@@ -86,7 +86,7 @@ class TweetCollector:
         new_tweets = [t for t in tweets if not self.store.tweet_exists(t.id)]
 
         # 2. 检查是否在最近24小时内评论过同一作者
-        recent_authors = self.store.get_recent_commented_authors(hours=24)
+        recent_authors = self.store.get_recent_commented_authors(hours=0)
 
         return [
             t for t in new_tweets

@@ -51,9 +51,13 @@ class CommentGenerator:
 5. 自然: 像真人评论，可以用emoji但不要太多
 6. 避免: 政治、争议话题、spam
 
-重要:
-- 直接输出评论内容，不要加"评论："等前缀
-- 必须使用与推文相同的语言
+CRITICAL - 输出格式:
+- 只输出评论原文，不要有任何其他内容
+- 不要加"评论："、"回复："等前缀
+- 不要加引号、书名号
+- 不要添加解释、说明
+- 不要分行说明
+- 就像你在 Twitter 上直接回复一样，只写评论本身
 """
 
     async def generate(self, tweet: Tweet) -> Comment:
@@ -206,7 +210,7 @@ class CommentGenerator:
 
     def _clean_content(self, content: str) -> str:
         """
-        清理评论内容
+        清理评论内容，只保留评论本身，去掉所有解释
 
         Args:
             content: 原始内容
@@ -214,19 +218,53 @@ class CommentGenerator:
         Returns:
             清理后的内容
         """
+        if not content:
+            return ""
+
         # 移除可能的前缀
         prefixes = [
             "评论：", "评论:", "Comment:", "回复：", "回复:",
             "生成的评论：", "生成的评论:",
-            "**评论：**", "**评论:**"
+            "**评论：**", "**评论:**",
+            "这是一条", "这条评论", "我的评论是",
+            "Here's", "Here is", "My comment:"
         ]
 
         for prefix in prefixes:
             if content.startswith(prefix):
                 content = content[len(prefix):].strip()
 
+        # 如果包含冒号后跟引号，可能是 "解释：「评论内容」" 格式
+        # 提取引号内的内容
+        import re
+
+        # 匹配 "xxx: 「评论」" 或 "xxx: "评论""
+        match = re.search(r'[:：]\s*[「『"\'](.*?)[」』"\']', content)
+        if match:
+            content = match.group(1).strip()
+        # 匹配 "「评论」" 开头
+        elif content.startswith('「') or content.startswith('『'):
+            match = re.match(r'^[「『](.*?)[」』]', content)
+            if match:
+                content = match.group(1).strip()
+
         # 移除可能的markdown格式
         if content.startswith('"') and content.endswith('"'):
             content = content[1:-1]
+        if content.startswith("'") and content.endswith("'"):
+            content = content[1:-1]
+
+        # 如果内容包含多行，且第一行是解释性文字，只取后面的
+        lines = content.split('\n')
+        if len(lines) > 1:
+            # 如果第一行包含"评论"、"回复"等关键词，可能是解释
+            first_line = lines[0].strip()
+            if any(keyword in first_line for keyword in ['评论', '回复', 'comment', 'reply', '这是', '这条']):
+                # 取第二行及之后的内容
+                content = '\n'.join(lines[1:]).strip()
+
+        # 移除可能的解释性后缀（比如 "（这样回复更友好）"）
+        content = re.sub(r'[（(][^)）]*解释[^)）]*[)）]', '', content)
+        content = re.sub(r'[（(][^)）]*说明[^)）]*[)）]', '', content)
 
         return content.strip()
