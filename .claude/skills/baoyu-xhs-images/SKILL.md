@@ -315,3 +315,4 @@ Outline: outline.md
 - Use cartoon alternatives for sensitive public figures
 - Output language matches input content language
 - Maintain selected style consistency across all images in series
+- No watermarks should be included in the images.
